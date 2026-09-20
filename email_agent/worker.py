@@ -8,7 +8,8 @@ from regulatory_ingest.models import MatterNotFound, PipelineError
 from regulatory_ingest.pipeline import run_pipeline
 
 from .mailbox import ImapSmtpMailbox, IncomingMessage, MailboxSettings
-from .parser import AgentRequest, RequestParseError, parse_request
+from .gemini_parser import extract_request
+from .parser import AgentRequest, RequestParseError
 
 
 def process_message(
@@ -21,7 +22,7 @@ def process_message(
 ) -> None:
     attachment = None
     try:
-        request = parse_request(message.subject, message.body)
+        request = extract_request(message.subject, message.body)
         result = run_pipeline(
             matter_number=request.matter_number,
             document_type=request.document_type,

@@ -8,12 +8,15 @@ the available files into a ZIP archive.
 The project has two independent entry points:
 
 - `regulatory-ingest` is the deterministic command-line ingestion pipeline.
-- `regulatory-email-agent` is an optional IMAP/SMTP adapter that parses an
-  incoming request, runs the pipeline, and replies with a summary and ZIP.
+- `regulatory-email-agent` is an optional IMAP/SMTP adapter that uses Gemini to
+  extract an incoming request, runs the pipeline, and replies with a summary
+  and ZIP.
 
-The email adapter uses deterministic text parsing, so an LLM API key is not
-required. The portal interaction is isolated from the email code and can be
-extended independently.
+Gemini only extracts the matter number and document category as structured
+data. Local validation, portal interaction, ZIP creation, reply formatting,
+and email sending remain deterministic. If Gemini is unavailable, the email
+adapter falls back to a small local parser. The portal interaction is isolated
+from the email code and can be extended independently.
 
 ## Setup
 
@@ -38,7 +41,7 @@ files are written under `downloads/`; the SQLite catalog defaults to
 ## Run the email adapter
 
 Configure the mailbox variables described in [.env.example](.env.example) in
-the process environment, then run:
+the process environment, including `GEMINI_API_KEY`, then run:
 
 ```bash
 poetry run regulatory-email-agent --send --once --limit 10
