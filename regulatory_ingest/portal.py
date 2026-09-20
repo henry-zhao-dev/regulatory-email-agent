@@ -12,6 +12,7 @@ START_URL = "https://uarb.novascotia.ca/fmi/webd/UARB15"
 MATTER_NUMBER_PATTERN = re.compile(r"M\d{5}")
 MATTER_FIELD_SELECTOR = "#b0p0o254i0i0r1"
 MATTER_SEARCH_BUTTON_SELECTOR = "#b0p0o258i0i0r1"
+DATE_SORT_DESC_SELECTOR = "#b0p0o283i0i0r1"
 MATTER_METADATA_SELECTORS = {
     "status": "#b0p0o289i0i0r1",
     "type": "#b0p0o298i0i0r1",
@@ -126,6 +127,10 @@ def open_document_type(page: Page, document_type: str, count: int) -> None:
     pdf_only = page.get_by_text("PDF Only", exact=True)
     pdf_only.wait_for(state="visible", timeout=60_000)
     pdf_only.click()
+    date_sort_desc = page.locator(DATE_SORT_DESC_SELECTOR)
+    date_sort_desc.wait_for(state="visible", timeout=60_000)
+    date_sort_desc.click()
+    page.wait_for_timeout(1_000)
     page.get_by_role("button", name="GO GET IT").first.wait_for(
         state="visible", timeout=60_000
     )

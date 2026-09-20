@@ -36,7 +36,8 @@ poetry run regulatory-ingest M12205 \
 Supported document categories are `Exhibits`, `Key Documents`, `Other
 Documents`, `Transcripts`, and `Recordings`. The ZIP archive and downloaded
 files are written under `downloads/`; the SQLite catalog defaults to
-`regulatory_ingest.db`.
+`regulatory_ingest.db`. Documents are sorted newest-first by filing date before
+the configured limit is applied.
 
 ## Run the email adapter
 
