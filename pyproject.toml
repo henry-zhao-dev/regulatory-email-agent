@@ -1,0 +1,21 @@
+[project]
+name = "regulatory-email-agent"
+version = "0.1.0"
+description = "Email agent and ingestion pipeline for public regulatory filing PDFs."
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dependencies = ["playwright>=1.63.0,<2.0.0"]
+
+[project.scripts]
+regulatory-ingest = "regulatory_ingest.cli:main"
+regulatory-email-agent = "email_agent.worker:main"
+
+[tool.poetry]
+packages = [
+    { include = "regulatory_ingest" },
+    { include = "email_agent" },
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

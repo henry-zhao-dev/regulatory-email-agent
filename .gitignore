@@ -1,0 +1,11 @@
+.venv/
+.idea/
+.DS_Store
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*.db
+downloads/
+dist/
