@@ -1,6 +1,7 @@
 """Background email worker for the regulatory ingestion pipeline."""
 
 import argparse
+import logging
 import time
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from .gemini_parser import extract_request
 from .parser import AgentRequest, RequestParseError
 
 
+logger = logging.getLogger(__name__)
+
+
 def process_message(
     mailbox: ImapSmtpMailbox,
     message: IncomingMessage,
@@ -20,9 +24,17 @@ def process_message(
     limit: int,
     headed: bool,
 ) -> None:
+    logger.info("Received email from %s (subject=%r)", message.sender, message.subject)
     attachment = None
     try:
+        logger.info("Extracting matter number and document type")
         request = extract_request(message.subject, message.body)
+        logger.info(
+            "Request extracted: matter=%s, document_type=%s",
+            request.matter_number,
+            request.document_type,
+        )
+        logger.info("Starting document ingestion")
         result = run_pipeline(
             matter_number=request.matter_number,
             document_type=request.document_type,
@@ -33,17 +45,37 @@ def process_message(
         )
         body = format_success(request, result)
         attachment = Path(result["zip_path"])
+        logger.info(
+            "Ingestion complete: downloaded=%s, failed=%s, zip=%s",
+            result["downloaded_count"],
+            result["failed_count"],
+            attachment,
+        )
     except RequestParseError as error:
+        logger.warning("Could not extract a valid request: %s", error)
         body = f"Hi,\n\nI could not process your request: {error}\n"
     except MatterNotFound as error:
+        logger.warning("Matter was not found: %s", error)
         body = f"Hi,\n\nI could not find that matter: {error}\n"
     except PipelineError as error:
+        logger.warning("Ingestion failed: %s", error)
         body = f"Hi,\n\nI could not process your request: {error}\n"
     except Exception as error:
+        logger.exception("Unexpected failure while processing email")
         body = f"Hi,\n\nThe request failed unexpectedly: {error}\n"
 
-    mailbox.send_reply(message, body, attachment)
+    if attachment:
+        logger.info("Sending reply to %s with attachment %s", message.sender, attachment)
+    else:
+        logger.info("Sending reply to %s without attachment", message.sender)
+    try:
+        mailbox.send_reply(message, body, attachment)
+    except Exception:
+        logger.exception("Failed to send reply to %s", message.sender)
+        raise
+    logger.info("Reply sent to %s", message.sender)
     mailbox.mark_processed(message)
+    logger.info("Marked email from %s as processed", message.sender)
 
 
 def format_success(request: AgentRequest, result: dict[str, object]) -> str:
@@ -74,13 +106,29 @@ def run_worker(
     poll_seconds: int,
     once: bool,
 ) -> None:
+    logger.info(
+        "Email worker started: poll_seconds=%s, limit=%s, output_dir=%s, db=%s, once=%s",
+        poll_seconds,
+        limit,
+        output_dir,
+        database_path,
+        once,
+    )
     while True:
-        for message in mailbox.unread_messages():
+        logger.info("Checking mailbox for unread messages")
+        messages = mailbox.unread_messages()
+        if messages:
+            logger.info("Found %d unread message(s)", len(messages))
+        else:
+            logger.info("No unread messages")
+        for message in messages:
             process_message(
                 mailbox, message, output_dir, database_path, limit, headed
             )
         if once:
+            logger.info("One-shot mailbox run complete")
             return
+        logger.info("Sleeping for %d seconds", poll_seconds)
         time.sleep(poll_seconds)
 
 
@@ -105,11 +153,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     args = parse_args()
     if not args.send:
         print("Email agent is disabled. Re-run with --send when mailbox testing is approved.")
         return
 
+    logger.info("Connecting to configured mailbox")
     mailbox = ImapSmtpMailbox(MailboxSettings.from_environment())
     try:
         run_worker(

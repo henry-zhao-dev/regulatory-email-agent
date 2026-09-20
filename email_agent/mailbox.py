@@ -5,6 +5,7 @@ used by the CLI unless the email agent is explicitly started with ``--send``.
 """
 
 import imaplib
+import logging
 import os
 import smtplib
 import ssl
@@ -14,6 +15,9 @@ from email.parser import BytesParser
 from email.policy import default
 from email.utils import parseaddr
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -65,11 +69,14 @@ class ImapSmtpMailbox:
             settings.imap_host, settings.imap_port
         )
         self.connection.login(settings.username, settings.password)
+        logger.info("Connected to IMAP mailbox %s (folder %s)", settings.imap_host, settings.folder)
 
     def unread_messages(self) -> list[IncomingMessage]:
         self.connection.select(self.settings.folder)
         status, data = self.connection.uid("search", None, "UNSEEN")
         if status != "OK" or not data or not data[0]:
+            if status != "OK":
+                logger.warning("Mailbox unread-message search returned status %s", status)
             return []
 
         messages = []
@@ -122,6 +129,7 @@ class ImapSmtpMailbox:
             self.connection.close()
         finally:
             self.connection.logout()
+            logger.info("Mailbox connection closed")
 
     @staticmethod
     def _parse_message(uid: str, raw: bytes) -> IncomingMessage:

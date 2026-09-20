@@ -55,6 +55,8 @@ def _extract_with_gemini(
             raise RequestParseError("Gemini is not configured: set GEMINI_API_KEY.")
         client = genai.Client(api_key=api_key)
 
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+    logger.info("Extracting the request with Gemini model %s", model)
     prompt = f"""
 Extract a document request from the email below.
 
@@ -75,7 +77,7 @@ Body:
 
     try:
         response = client.models.generate_content(
-            model=os.environ.get("GEMINI_MODEL", DEFAULT_MODEL),
+            model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -84,7 +86,9 @@ Body:
             ),
         )
         extraction = _parse_response(response)
-        return validate_request(extraction.matter_number, extraction.document_type)
+        request = validate_request(extraction.matter_number, extraction.document_type)
+        logger.info("Gemini extraction succeeded")
+        return request
     except RequestParseError:
         raise
     except (ValidationError, ValueError) as error:

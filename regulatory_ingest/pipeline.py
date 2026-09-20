@@ -1,6 +1,7 @@
 """Orchestration for searching, downloading, caching, and packaging."""
 
 import json
+import logging
 import re
 import zipfile
 from dataclasses import asdict
@@ -22,6 +23,9 @@ from .portal import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
@@ -34,6 +38,12 @@ def run_pipeline(
     limit: int,
     headless: bool,
 ) -> dict[str, object]:
+    logger.info(
+        "Pipeline started: matter=%s, document_type=%s, limit=%s",
+        matter_number,
+        document_type,
+        limit,
+    )
     validate_request(matter_number, limit)
     output_dir.mkdir(parents=True, exist_ok=True)
     category_dir = output_dir / matter_number / slugify(document_type)
@@ -42,13 +52,26 @@ def run_pipeline(
 
     try:
         with sync_playwright() as playwright:
+            logger.info("Launching browser (headless=%s)", headless)
             browser = playwright.chromium.launch(headless=headless)
             context = browser.new_context(accept_downloads=True)
             page = context.new_page()
             try:
+                logger.info("Searching the filing portal for %s", matter_number)
                 metadata, category_counts = search_matter(page, matter_number)
+                logger.info(
+                    "Matter found: %s; document counts=%s",
+                    metadata.get("title", "(untitled)"),
+                    category_counts,
+                )
                 save_matter(connection, matter_number, metadata, category_counts)
                 requested_count = category_counts[document_type]
+                logger.info(
+                    "Collecting up to %d %s document(s); %d available",
+                    limit,
+                    document_type,
+                    requested_count,
+                )
                 records = download_documents(
                     page,
                     connection,
@@ -76,6 +99,13 @@ def run_pipeline(
     status = "no_files" if requested_count == 0 or not records else "success"
     if failed_count:
         status = "partial"
+    logger.info(
+        "Pipeline finished: status=%s, downloaded=%d, failed=%d, zip=%s",
+        status,
+        downloaded_count,
+        failed_count,
+        zip_path,
+    )
     return {
         "status": status,
         "matter_number": matter_number,
@@ -111,8 +141,12 @@ def download_documents(
     records: list[DocumentRecord] = []
     seen_rows: set[str] = set()
     next_display_order = 1
+    target_count = min(limit, requested_count)
+    logger.info(
+        "Opened %s tab; target is %d document(s)", document_type, target_count
+    )
 
-    while len(records) < min(limit, requested_count):
+    while len(records) < target_count:
         candidate, button = next_visible_candidate(
             page, document_type, next_display_order, seen_rows
         )
@@ -124,15 +158,23 @@ def download_documents(
         seen_rows.add(candidate.row_key)
         next_display_order += 1
         record = record_from_candidate(candidate)
+        logger.info(
+            "Processing document %d: number=%s, title=%r",
+            candidate.display_order,
+            candidate.document_number,
+            candidate.title,
+        )
         cached = cached_document(connection, matter_number, candidate)
         save_document(connection, matter_number, record)
 
         if use_cached_download(cached, record):
+            logger.info("Using cached download: %s", record.local_path)
             records.append(record)
             save_document(connection, matter_number, record)
             continue
 
         try:
+            logger.info("Downloading document %s", candidate.document_number)
             button.click()
             saved_path, error = download_from_confirmation_dialog(
                 page, category_dir, f"{candidate.display_order:02d}.pdf"
@@ -141,16 +183,31 @@ def download_documents(
                 record.status = "downloaded"
                 record.filename = saved_path.name
                 record.local_path = str(saved_path)
+                logger.info("Downloaded document to %s", saved_path)
             else:
                 record.status = "failed"
                 record.error = error or "Unknown download error"
+                logger.warning(
+                    "Document %s could not be downloaded: %s",
+                    candidate.document_number,
+                    record.error,
+                )
         except Exception as error:
             record.status = "failed"
             record.error = str(error)
             close_download_dialog(page)
+            logger.warning(
+                "Document %s failed: %s", candidate.document_number, record.error
+            )
 
         save_document(connection, matter_number, record)
         records.append(record)
+    logger.info(
+        "Document collection finished: selected=%d, downloaded=%d, failed=%d",
+        len(records),
+        sum(record.status == "downloaded" for record in records),
+        sum(record.status == "failed" for record in records),
+    )
     return records
 
 
@@ -195,8 +252,15 @@ def create_package(
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     zip_path = output_dir / f"{metadata['matter_number']}-{slugify(document_type)}.zip"
+    logger.info("Creating ZIP archive %s", zip_path)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for record in downloaded:
             archive.write(record.local_path, arcname=record.filename)
         archive.write(manifest_path, arcname="manifest.json")
+    logger.info(
+        "ZIP archive created: %s (%d PDFs, %d failed records)",
+        zip_path,
+        len(downloaded),
+        len(failed),
+    )
     return zip_path, len(downloaded), len(failed)

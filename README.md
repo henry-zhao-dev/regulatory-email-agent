@@ -51,6 +51,10 @@ The worker processes unread messages and replies to the original sender. Omit
 `--once` to poll continuously. The `--send` flag is required before the worker
 will connect to a mailbox or send messages.
 
+The worker writes INFO-level progress logs for mailbox polling, request
+extraction, portal searches, downloads, ZIP creation, replies, and message
+completion. Credentials and email bodies are not logged.
+
 Requests should contain a matter number such as `M12205` and one supported
 document category, for example:
 
