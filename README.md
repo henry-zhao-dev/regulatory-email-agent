@@ -41,8 +41,14 @@ the configured limit is applied.
 
 ## Run the email adapter
 
-Configure the mailbox variables described in [.env.example](.env.example) in
-the process environment, including `GEMINI_API_KEY`, then run:
+Create a local `.env` file from [.env.example](.env.example), fill in the
+mailbox and `GEMINI_API_KEY` values, then run:
+
+```bash
+cp .env.example .env
+```
+
+The worker loads `.env` automatically:
 
 ```bash
 poetry run regulatory-email-agent --send --once --limit 10

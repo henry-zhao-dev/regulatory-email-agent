@@ -5,6 +5,7 @@ import logging
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
 from regulatory_ingest.models import MatterNotFound, PipelineError
 from regulatory_ingest.pipeline import run_pipeline
 
@@ -153,6 +154,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    load_dotenv()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
