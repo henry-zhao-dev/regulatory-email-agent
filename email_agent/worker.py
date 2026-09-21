@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import smtplib
 import time
 from pathlib import Path
 
@@ -71,12 +72,42 @@ def process_message(
         logger.info("Sending reply to %s without attachment", message.sender)
     try:
         mailbox.send_reply(message, body, attachment)
-    except Exception:
-        logger.exception("Failed to send reply to %s", message.sender)
-        raise
+    except Exception as error:
+        if attachment and _is_message_size_error(error):
+            fallback_body = body.replace(
+                "and attached the ZIP.",
+                "but could not attach the ZIP because it exceeded the email size limit.",
+            )
+            logger.warning(
+                "ZIP was too large to send to %s; retrying without attachment",
+                message.sender,
+            )
+            try:
+                mailbox.send_reply(message, fallback_body)
+            except Exception:
+                logger.exception(
+                    "Failed to send text-only fallback reply to %s",
+                    message.sender,
+                )
+                return
+        else:
+            logger.exception("Failed to send reply to %s", message.sender)
+            return
     logger.info("Reply sent to %s", message.sender)
     mailbox.mark_processed(message)
     logger.info("Marked email from %s as processed", message.sender)
+
+
+def _is_message_size_error(error: Exception) -> bool:
+    """Return whether an SMTP error indicates that the message is too large."""
+    if not isinstance(error, smtplib.SMTPResponseException):
+        return False
+
+    detail = error.smtp_error
+    if isinstance(detail, bytes):
+        detail = detail.decode(errors="replace")
+    message = f"{error.smtp_code} {detail}".lower()
+    return error.smtp_code == 552 or "message size" in message or "too large" in message
 
 
 def format_success(request: AgentRequest, result: dict[str, object]) -> str:
